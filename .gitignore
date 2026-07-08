@@ -1,0 +1,60 @@
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node.js dependencies and builds
+node_modules/
+**/node_modules/
+dist/
+build/
+.npm/
+
+# Application Specific Caches & Local DBs
+.skill_cache/
+backend/temp/
+
+# Environment configurations (Contains secrets!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE configurations
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary outputs, text files and logs
+*.log
+*.txt
+_edu_debug.txt
+_result.txt
+ml_output.txt
+
+# Exclude resume data and output files
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.docx
+resume dataset/
+*-output.json
