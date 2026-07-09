@@ -48,6 +48,10 @@ export default function App() {
   const [manualGithubInput, setManualGithubInput] = useState('');
   const [isLinkingGithub, setIsLinkingGithub] = useState(false);
 
+  // Blind Hiring Mode States
+  const [isBlindMode, setIsBlindMode] = useState(true);
+  const [revealedIds, setRevealedIds] = useState<number[]>([]);
+
   // Fetch real candidates from FastAPI with optional custom weights
   const fetchCandidates = useCallback(async (
     wSemVal = 0.60,
@@ -397,15 +401,37 @@ export default function App() {
               AI Recruiter
             </h1>
           </div>
-          <motion.button
-            onClick={() => setIsChatOpen(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-2 rounded-xl border border-purple-500/60 bg-purple-900/90 px-4 py-2 text-sm font-bold text-purple-100 backdrop-blur-sm transition-all hover:bg-purple-800 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hover:text-white"
-          >
-            <Brain className="h-4 w-4" />
-            Recruiter Assistant
-          </motion.button>
+          <div className="flex items-center gap-6">
+            {/* Blind Review Toggle */}
+            <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-900/40 px-4 py-2 text-xs font-semibold backdrop-blur-sm shadow-md">
+              <span className="text-slate-300">Blind Review Mode</span>
+              <button
+                onClick={() => {
+                  setIsBlindMode(!isBlindMode);
+                  toast.info(!isBlindMode ? "Blind Review active. Anonymizing candidate names." : "Blind Review deactivated. Showing all names.");
+                }}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors outline-none focus:ring-1 focus:ring-purple-500/50 ${
+                  isBlindMode ? 'bg-purple-600' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    isBlindMode ? 'translate-x-5.5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <motion.button
+              onClick={() => setIsChatOpen(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 rounded-xl border border-purple-500/60 bg-purple-900/90 px-4 py-2 text-sm font-bold text-purple-100 backdrop-blur-sm transition-all hover:bg-purple-800 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hover:text-white"
+            >
+              <Brain className="h-4 w-4" />
+              Recruiter Assistant
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* Main Layout */}
@@ -696,24 +722,41 @@ export default function App() {
                         </div>
 
                         {/* Name */}
-                        <div className="flex items-center gap-2 font-medium text-slate-200 relative group/audit">
-                          <span>{candidate.name}</span>
-                          {candidate.github_username ? (
-                            <button
-                              onClick={() => handleOpenGithubModal(candidate)}
-                              className="text-purple-400 hover:text-purple-300 transition-colors hover:scale-110 flex items-center"
-                              title={`GitHub handle: @${candidate.github_username}`}
-                            >
-                              <Github className="h-3.5 w-3.5 drop-shadow-[0_0_8px_rgba(168,85,247,0.6)]" />
-                            </button>
+                        <div className="flex items-center gap-2.5 font-medium text-slate-200 relative group/audit">
+                          {isBlindMode && !revealedIds.includes(candidate.id) ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-400 italic text-sm">Candidate #{candidate.id}</span>
+                              <button
+                                onClick={() => {
+                                  setRevealedIds([...revealedIds, candidate.id]);
+                                  toast.success(`Identity of Candidate #${candidate.id} revealed!`);
+                                }}
+                                className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-300 transition-all hover:bg-purple-500/25 hover:text-white"
+                              >
+                                Reveal
+                              </button>
+                            </div>
                           ) : (
-                            <button
-                              onClick={() => handleOpenGithubModal(candidate)}
-                              className="text-slate-600 hover:text-slate-400 transition-colors flex items-center"
-                              title="Link GitHub Handle"
-                            >
-                              <Github className="h-3.5 w-3.5 opacity-30 hover:opacity-100" />
-                            </button>
+                            <>
+                              <span>{candidate.name}</span>
+                              {candidate.github_username ? (
+                                <button
+                                  onClick={() => handleOpenGithubModal(candidate)}
+                                  className="text-purple-400 hover:text-purple-300 transition-colors hover:scale-110 flex items-center"
+                                  title={`GitHub handle: @${candidate.github_username}`}
+                                >
+                                  <Github className="h-3.5 w-3.5 drop-shadow-[0_0_8px_rgba(168,85,247,0.6)]" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleOpenGithubModal(candidate)}
+                                  className="text-slate-600 hover:text-slate-400 transition-colors flex items-center"
+                                  title="Link GitHub Handle"
+                                >
+                                  <Github className="h-3.5 w-3.5 opacity-30 hover:opacity-100" />
+                                </button>
+                              )}
+                            </>
                           )}
                           {candidate.audit_status?.flagged && (
                             <div className="relative cursor-pointer">
