@@ -10,6 +10,12 @@ interface Candidate {
   semanticMatch: number;
   mlStrength: number;
   decision: string;
+  audit_status?: {
+    flagged: boolean;
+    copy_paste_percentage: number;
+    stuffed_keywords: string[];
+    warnings: string[];
+  };
 }
 
 export default function App() {
@@ -52,6 +58,7 @@ export default function App() {
           semanticMatch: Math.round(c.semantic_score * 100),
           mlStrength: Math.round(c.candidate_strength * 100),
           decision: c.decision.replace(/[\[\]]/g, ''), // removes [ ] around decision
+          audit_status: c.audit_status
         }));
         setCandidates(mapped);
       }
@@ -120,6 +127,67 @@ export default function App() {
       toast.error('Network error. Failed to connect to server.');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleBulkFileUploads = async (files: File[]) => {
+    setIsUploading(true);
+    const total = files.length;
+    let successCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    const toastId = toast.loading(`Uploading 1 of ${total} resumes...`, {
+      description: "Processing sequentially to prevent rate limits.",
+    });
+
+    for (let i = 0; i < total; i++) {
+      const file = files[i];
+      // Update loading status
+      toast.loading(`Uploading ${i + 1} of ${total}: ${file.name}...`, { 
+        id: toastId,
+        description: "Processing sequentially to prevent rate limits.",
+      });
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('http://localhost:8000/api/resumes/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.message.includes('already uploaded')) {
+            skippedCount++;
+          } else {
+            successCount++;
+          }
+        } else {
+          failedCount++;
+        }
+      } catch (err) {
+        console.error(err);
+        failedCount++;
+      }
+
+      // Add a small 1-second delay between requests to guarantee rate limits are not triggered
+      if (i < total - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Refresh candidate leaderboard
+    await fetchCandidates(wSem, wKw, wExp, wMatch, wStrength);
+    setIsUploading(false);
+
+    // Show consolidated results
+    const summaryMsg = `Bulk upload finished. ${successCount} added, ${skippedCount} skipped, ${failedCount} failed.`;
+    if (failedCount > 0) {
+      toast.warning(summaryMsg, { id: toastId, duration: 6000 });
+    } else {
+      toast.success(summaryMsg, { id: toastId, duration: 6000 });
     }
   };
 
@@ -202,6 +270,15 @@ export default function App() {
     }
   };
 
+  const resetWeights = () => {
+    setWSem(0.60);
+    setWKw(0.25);
+    setWExp(0.15);
+    setWMatch(0.60);
+    setWStrength(0.40);
+    toast.success('Weights reset to AI defaults.');
+  };
+
   const getDecisionStyle = (decision: string) => {
     switch (decision) {
       case 'INTERVIEW':
@@ -240,7 +317,7 @@ export default function App() {
             onClick={() => setIsChatOpen(true)}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-2 rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-sm font-semibold text-purple-300 backdrop-blur-sm transition-all hover:bg-purple-500/20 hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+            className="flex items-center gap-2 rounded-xl border border-purple-500/60 bg-purple-900/90 px-4 py-2 text-sm font-bold text-purple-100 backdrop-blur-sm transition-all hover:bg-purple-800 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] hover:text-white"
           >
             <Brain className="h-4 w-4" />
             Recruiter Assistant
@@ -297,8 +374,13 @@ export default function App() {
                 onDrop={(e) => {
                   e.preventDefault();
                   setIsDragging(false);
-                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                    handleFileUpload(e.dataTransfer.files[0]);
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    const filesArray = Array.from(e.dataTransfer.files);
+                    if (filesArray.length === 1) {
+                      handleFileUpload(filesArray[0]);
+                    } else {
+                      handleBulkFileUploads(filesArray);
+                    }
                   }
                 }}
                 className={`flex h-48 flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all ${
@@ -311,7 +393,17 @@ export default function App() {
                   type="file" 
                   className="hidden" 
                   id="resume-upload" 
-                  onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])}
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      const filesArray = Array.from(e.target.files);
+                      if (filesArray.length === 1) {
+                        handleFileUpload(filesArray[0]);
+                      } else {
+                        handleBulkFileUploads(filesArray);
+                      }
+                    }
+                  }}
                   accept=".pdf,.png,.jpg,.docx"
                 />
                 <label 
@@ -334,10 +426,18 @@ export default function App() {
 
             {/* AI Ranking Controller Card */}
             <div className="group rounded-2xl border border-white/10 bg-slate-900/40 p-6 shadow-2xl backdrop-blur-xl transition-all hover:border-purple-500/30 hover:shadow-[0_0_30px_rgba(168,85,247,0.15)]">
-              <h3 className="mb-4 flex items-center gap-2 text-purple-300 font-semibold">
-                <TrendingUp className="h-5 w-5" />
-                AI Ranking Controller
-              </h3>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-purple-300 font-semibold text-sm">
+                  <TrendingUp className="h-5 w-5" />
+                  AI Ranking Controller
+                </h3>
+                <button
+                  onClick={resetWeights}
+                  className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-purple-300 transition-all hover:bg-purple-500/30 hover:text-white"
+                >
+                  Reset
+                </button>
+              </div>
               
               {/* Group 1: General Match Priorities */}
               <div className="space-y-4 border-b border-white/5 pb-4 mb-4">
@@ -512,8 +612,24 @@ export default function App() {
                         </div>
 
                         {/* Name */}
-                        <div className="flex items-center font-medium text-slate-200">
-                          {candidate.name}
+                        <div className="flex items-center gap-2 font-medium text-slate-200 relative group/audit">
+                          <span>{candidate.name}</span>
+                          {candidate.audit_status?.flagged && (
+                            <div className="relative cursor-pointer">
+                              <span className="text-amber-500 animate-pulse text-sm">⚠️</span>
+                              {/* Hover Tooltip */}
+                              <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover/audit:block z-50 w-72 rounded-xl border border-amber-500/20 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
+                                <p className="text-xs font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+                                  <span>Optimization Warning</span>
+                                </p>
+                                <ul className="space-y-1 list-disc pl-3 text-[10px] leading-relaxed text-slate-300 font-normal">
+                                  {candidate.audit_status.warnings.map((w, idx) => (
+                                    <li key={idx}>{w}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* AI Score with sparkline */}

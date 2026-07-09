@@ -15,6 +15,7 @@ from ml import _TIER_INTERVIEW, _TIER_PHONE_SCREEN, _two_stage_predict, _extract
 import joblib
 import numpy as np
 from backend.agent import chat_agent
+from backend.auditor import audit_resume
 
 app = FastAPI(title="AI Recruiter API")
 
@@ -190,6 +191,11 @@ def get_ranked_candidates(
             strength_val = (prob - (w_match * comp)) / w_strength if w_strength > 0 else 0.0
             strength = max(0.0, min(strength_val, 1.0))
 
+            # Run the Resume Optimization Auditor dynamically
+            p = p_slice[int(idx)] if (p_slice and int(idx) < len(p_slice)) else {}
+            resume_raw = p.get("raw_text", "")
+            audit_status = audit_resume(resume_raw, db_jd)
+
             report.append({
                 "rank": int(new_rank + 1),
                 "name": str(r.get("name", "Unknown")),
@@ -202,6 +208,7 @@ def get_ranked_candidates(
                 "candidate_strength": float(round(min(strength, 1.0), 4)),
                 "skills_matched": list(r.get("skills_matched", [])),
                 "skills_missing": list(r.get("skills_missing", [])),
+                "audit_status": audit_status,
             })
 
         return {"candidates": report}
