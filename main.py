@@ -75,6 +75,19 @@ def _raw_text_from_file(file_path: str) -> str:
             import fitz  # PyMuPDF
             doc = fitz.open(str(p))
             text = "\n".join(page.get_text() for page in doc)
+            
+            # Extract structural hyperlinks (e.g. hyperlinked portfolio words like "GitHub")
+            try:
+                links_list = []
+                for page in doc:
+                    for link in page.get_links():
+                        uri = link.get("uri")
+                        if uri:
+                            links_list.append(uri)
+                if links_list:
+                    text += "\n\n[Extracted Hyperlinks]\n" + "\n".join(links_list)
+            except Exception:
+                pass
         except Exception:
             pass
 

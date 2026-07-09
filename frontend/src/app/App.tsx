@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, Upload, TrendingUp, Brain, Zap } from 'lucide-react';
+import { Sparkles, Upload, TrendingUp, Brain, Zap, Github } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
 interface Candidate {
   id: number;
   name: string;
+  file_hash: string;
+  github_username?: string | null;
   score: number;
   semanticMatch: number;
   mlStrength: number;
@@ -38,6 +40,14 @@ export default function App() {
   const [wMatch, setWMatch] = useState(0.60);
   const [wStrength, setWStrength] = useState(0.40);
 
+  // GitHub Integration States
+  const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
+  const [githubModalLoading, setGithubModalLoading] = useState(false);
+  const [activeGithubCandidate, setActiveGithubCandidate] = useState<Candidate | null>(null);
+  const [githubStats, setGithubStats] = useState<any | null>(null);
+  const [manualGithubInput, setManualGithubInput] = useState('');
+  const [isLinkingGithub, setIsLinkingGithub] = useState(false);
+
   // Fetch real candidates from FastAPI with optional custom weights
   const fetchCandidates = useCallback(async (
     wSemVal = 0.60,
@@ -54,6 +64,8 @@ export default function App() {
         const mapped = data.candidates.map((c: any) => ({
           id: c.rank,
           name: c.name,
+          file_hash: c.file_hash,
+          github_username: c.github_username,
           score: Math.round(c.hire_probability * 100),
           semanticMatch: Math.round(c.semantic_score * 100),
           mlStrength: Math.round(c.candidate_strength * 100),
@@ -277,6 +289,78 @@ export default function App() {
     setWMatch(0.60);
     setWStrength(0.40);
     toast.success('Weights reset to AI defaults.');
+  };
+
+  const handleOpenGithubModal = async (candidate: Candidate) => {
+    setActiveGithubCandidate(candidate);
+    setIsGithubModalOpen(true);
+    setManualGithubInput(candidate.github_username || '');
+    
+    if (!candidate.github_username) {
+      setGithubStats(null);
+      return;
+    }
+
+    setGithubModalLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/candidates/${candidate.file_hash}/github`);
+      if (res.ok) {
+        const data = await res.json();
+        setGithubStats(data.stats);
+      } else {
+        toast.error('Failed to load GitHub stats.');
+        setGithubStats(null);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to connect to GitHub API.');
+      setGithubStats(null);
+    } finally {
+      setGithubModalLoading(false);
+    }
+  };
+
+  const handleLinkGithubSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeGithubCandidate) return;
+
+    setIsLinkingGithub(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/candidates/${activeGithubCandidate.file_hash}/github`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ github_username: manualGithubInput }),
+      });
+
+      if (res.ok) {
+        toast.success('GitHub profile updated!');
+        await fetchCandidates(wSem, wKw, wExp, wMatch, wStrength);
+        
+        const updatedCandidate = { ...activeGithubCandidate, github_username: manualGithubInput || null };
+        setActiveGithubCandidate(updatedCandidate);
+        
+        if (manualGithubInput.trim()) {
+          setGithubModalLoading(true);
+          const statsRes = await fetch(`http://localhost:8000/api/candidates/${activeGithubCandidate.file_hash}/github`);
+          if (statsRes.ok) {
+            const statsData = await statsRes.json();
+            setGithubStats(statsData.stats);
+          } else {
+            setGithubStats(null);
+          }
+          setGithubModalLoading(false);
+        } else {
+          setGithubStats(null);
+        }
+      } else {
+        toast.error('Failed to update GitHub handle.');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Network error. Failed to save handle.');
+    } finally {
+      setIsLinkingGithub(false);
+    }
   };
 
   const getDecisionStyle = (decision: string) => {
@@ -614,6 +698,23 @@ export default function App() {
                         {/* Name */}
                         <div className="flex items-center gap-2 font-medium text-slate-200 relative group/audit">
                           <span>{candidate.name}</span>
+                          {candidate.github_username ? (
+                            <button
+                              onClick={() => handleOpenGithubModal(candidate)}
+                              className="text-purple-400 hover:text-purple-300 transition-colors hover:scale-110 flex items-center"
+                              title={`GitHub handle: @${candidate.github_username}`}
+                            >
+                              <Github className="h-3.5 w-3.5 drop-shadow-[0_0_8px_rgba(168,85,247,0.6)]" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenGithubModal(candidate)}
+                              className="text-slate-600 hover:text-slate-400 transition-colors flex items-center"
+                              title="Link GitHub Handle"
+                            >
+                              <Github className="h-3.5 w-3.5 opacity-30 hover:opacity-100" />
+                            </button>
+                          )}
                           {candidate.audit_status?.flagged && (
                             <div className="relative cursor-pointer">
                               <span className="text-amber-500 animate-pulse text-sm">⚠️</span>
@@ -770,6 +871,188 @@ export default function App() {
           onClick={() => setIsChatOpen(false)}
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-all"
         />
+      )}
+
+      {/* GitHub Developer Profile Modal */}
+      {isGithubModalOpen && activeGithubCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-[500px] rounded-2xl border border-white/10 bg-slate-950 p-6 shadow-2xl backdrop-blur-2xl"
+          >
+            {/* Modal Header */}
+            <div className="mb-4 flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2">
+                <Github className="h-6 w-6 text-purple-400" />
+                <div>
+                  <h3 className="font-bold text-slate-200">GitHub Developer Profile</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">For candidate: {activeGithubCandidate.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsGithubModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              >
+                <span className="text-xl leading-none">&times;</span>
+              </button>
+            </div>
+
+            {/* Link Handle form */}
+            {(!activeGithubCandidate.github_username || isLinkingGithub) ? (
+              <form onSubmit={handleLinkGithubSubmit} className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <label className="text-xs text-slate-400 font-medium">Enter candidate's GitHub handle:</label>
+                  <input
+                    type="text"
+                    value={manualGithubInput}
+                    onChange={(e) => setManualGithubInput(e.target.value)}
+                    placeholder="e.g. octocat"
+                    className="w-full rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 placeholder-slate-500 outline-none ring-purple-500/50 focus:border-purple-500/50 focus:ring-2"
+                    disabled={isLinkingGithub}
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeGithubCandidate.github_username) {
+                        setManualGithubInput(activeGithubCandidate.github_username);
+                      } else {
+                        setIsGithubModalOpen(false);
+                      }
+                    }}
+                    className="rounded-xl border border-white/5 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-xl border border-purple-500/50 bg-gradient-to-r from-purple-600 to-cyan-600 px-4 py-2 text-xs font-semibold text-white hover:border-purple-400 hover:shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+                    disabled={isLinkingGithub}
+                  >
+                    {isLinkingGithub ? 'Saving...' : 'Link Profile'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // Main details display
+              <div className="space-y-6 py-2">
+                {githubModalLoading ? (
+                  <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                    <p className="text-xs text-slate-500 font-medium">Querying public GitHub API...</p>
+                  </div>
+                ) : !githubStats ? (
+                  <div className="py-8 text-center text-slate-500 text-sm">
+                    <p className="font-medium">No GitHub statistics found for handle: <span className="text-purple-400 font-bold">@{activeGithubCandidate.github_username}</span></p>
+                    <div className="mt-4 flex justify-center gap-2">
+                      <button
+                        onClick={() => {
+                          setManualGithubInput('');
+                          const updated = { ...activeGithubCandidate, github_username: null };
+                          setActiveGithubCandidate(updated);
+                        }}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/10"
+                      >
+                        Change Username
+                      </button>
+                      <button
+                        onClick={() => handleOpenGithubModal(activeGithubCandidate)}
+                        className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-300 hover:bg-purple-500/20"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                ) : githubStats.rate_limit_exceeded ? (
+                  <div className="py-8 text-center text-slate-500 text-sm">
+                    <p className="text-amber-500 font-medium mb-1">⚠️ GitHub API Rate Limit Exceeded</p>
+                    <p className="text-xs leading-relaxed max-w-[320px] mx-auto text-slate-500">
+                      Unauthenticated developer requests are limited by GitHub. To prevent this, link a personal token in your env or try again later.
+                    </p>
+                    <p className="mt-4 text-xs font-medium">Target profile handle: <span className="text-purple-400 font-semibold">@{activeGithubCandidate.github_username}</span></p>
+                    <div className="mt-4 flex justify-center gap-2">
+                      <button
+                        onClick={() => {
+                          setManualGithubInput('');
+                          const updated = { ...activeGithubCandidate, github_username: null };
+                          setActiveGithubCandidate(updated);
+                        }}
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/10"
+                      >
+                        Change Username
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Repository Counts Stats Grid */}
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                        <p className="text-lg font-bold text-slate-200">{githubStats.repos_count}</p>
+                        <p className="text-[10px] text-slate-500">Public Repos</p>
+                      </div>
+                      <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                        <p className="text-lg font-bold text-purple-400">{githubStats.stars_count}</p>
+                        <p className="text-[10px] text-slate-500">Total Stars</p>
+                      </div>
+                      <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                        <p className="text-lg font-bold text-cyan-400">{githubStats.forks_count}</p>
+                        <p className="text-[10px] text-slate-500">Total Forks</p>
+                      </div>
+                    </div>
+
+                    {/* Language Usage Stack Chart */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-semibold text-slate-400">Primary Languages Stack (by Repository size)</h4>
+                      {Object.keys(githubStats.languages).length === 0 ? (
+                        <p className="text-xs text-slate-500 italic">No language data found in public repositories.</p>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {Object.entries(githubStats.languages).map(([lang, pct]: any) => (
+                            <div key={lang} className="space-y-1">
+                              <div className="flex justify-between text-xs text-slate-300">
+                                <span>{lang}</span>
+                                <span className="font-bold text-purple-400">{pct}%</span>
+                              </div>
+                              <div className="h-1.5 overflow-hidden rounded-full bg-slate-900 w-full">
+                                <div
+                                  style={{ width: `${pct}%` }}
+                                  className="h-full rounded-full bg-gradient-to-r from-purple-500 to-cyan-500"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex justify-between border-t border-white/5 pt-4 mt-2">
+                      <button
+                        onClick={() => {
+                          setManualGithubInput(activeGithubCandidate.github_username || '');
+                          const updated = { ...activeGithubCandidate, github_username: null };
+                          setActiveGithubCandidate(updated);
+                        }}
+                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                      >
+                        Modify Handle
+                      </button>
+                      <button
+                        onClick={() => handleOpenGithubModal(activeGithubCandidate)}
+                        className="rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-xs font-semibold text-purple-300 hover:bg-purple-500/20"
+                      >
+                        Reload
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </motion.div>
+        </div>
       )}
     </div>
   );
