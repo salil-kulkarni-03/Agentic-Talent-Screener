@@ -98,7 +98,7 @@ def _make_decision(prob: float) -> str:
 # Rich feature extraction helpers (from main.py parsed dicts)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 _CERT_KW = {
     "aws", "azure", "gcp", "google cloud", "kubernetes", "docker certified",
@@ -117,10 +117,19 @@ _TECH_KW = {
 def _parse_exp_years(parsed: dict) -> tuple[float, float]:
     """
     Return (total_exp_years, recent_exp_years).
-    Parses year ranges from experience summaries.
-    'Recent' = experience partially or fully within last 3 years.
-    Handles malformed/missing summaries gracefully.
+    Uses pre-extracted LLM values if available, otherwise falls back to regex.
     """
+    # Try reading LLM-extracted values first
+    llm_total = parsed.get("total_experience_years")
+    llm_recent = parsed.get("recent_experience_years")
+    
+    if llm_total is not None and llm_recent is not None:
+        try:
+            return round(min(float(llm_total), 40.0), 2), round(min(float(llm_recent), 10.0), 2)
+        except (ValueError, TypeError):
+            pass
+
+    # Fallback to local regex-based parsing
     now_year = datetime.now().year
     total  = 0.0
     recent = 0.0
@@ -145,8 +154,17 @@ def _parse_exp_years(parsed: dict) -> tuple[float, float]:
 def _parse_edu_gpa(parsed: dict) -> float:
     """
     Extract highest GPA/CGPA/percentage normalised to 0-10.
-    Handles 'CGPA: 8.5', '80.17%', 'GPA 3.8/4.0', etc.
+    Uses pre-extracted LLM values if available, otherwise falls back to regex.
     """
+    # Try reading LLM-extracted normalized GPA first
+    llm_gpa = parsed.get("normalized_gpa_scaled_to_10")
+    if llm_gpa is not None:
+        try:
+            return round(min(float(llm_gpa), 10.0), 2)
+        except (ValueError, TypeError):
+            pass
+
+    # Fallback to local regex-based parsing
     best    = 0.0
     gpa_re  = re.compile(r"(?:cgpa|gpa)[^\d]*([0-9]+\.?[0-9]*)", re.IGNORECASE)
     pct_re  = re.compile(r"([0-9]+\.?[0-9]*)\s*%")

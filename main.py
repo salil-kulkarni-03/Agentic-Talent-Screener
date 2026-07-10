@@ -160,7 +160,10 @@ Return ONLY a valid JSON object with exactly these keys, no extra text, no markd
   ],
   "education": [
     {"institution": "University Name", "degree": "B.Tech Computer Engineering", "year": "2022", "gpa": "8.5 or empty string"}
-  ]
+  ],
+  "total_experience_years": 4.5,
+  "recent_experience_years": 2.0,
+  "normalized_gpa_scaled_to_10": 8.8
 }
 
 Rules:
@@ -173,6 +176,15 @@ Rules:
 - education: list each degree separately
   - gpa: use the numeric value as-is (e.g. "8.5" or "3.9" or "85%"). Use "" if not mentioned
   - If the score is a percentage, include the % sign (e.g. "95%")
+- total_experience_years: A float (rounded to 1 decimal) representing total calendar years of experience.
+  - Calculate this by checking all work experience entries.
+  - IMPORTANT: If job periods overlap, merge them so you do not double-count overlapping years.
+- recent_experience_years: A float (rounded to 1 decimal) representing experience years falling within the last 3 years (relative to today).
+- normalized_gpa_scaled_to_10: A float (rounded to 2 decimals) representing their highest educational score scaled to 10.0.
+  - If on a 4.0 scale (e.g. "3.8/4.0"), multiply by 2.5 (e.g., 9.5).
+  - If a percentage (e.g. "85%"), divide by 10 (e.g., 8.5).
+  - If already on a 10.0 scale, output as-is.
+  - Use null if not mentioned.
 - If a field is not found at all, use empty list []
 - Do NOT include contact info (email, phone, address)
 - Do NOT hallucinate or invent information that is not in the text
@@ -180,37 +192,45 @@ Rules:
 
 def _call_groq(raw_text: str) -> dict:
     """
-    Sends the locally-extracted resume text to Groq's Llama-3 API.
-    Groq is text-only (not multimodal), so we always extract text locally first.
+    Sends the locally-extracted resume text to Groq's Llama-3 API with exponential backoff retries.
     """
     from groq import Groq
 
     client = Groq(api_key=GROQ_API_KEY)
+    scrubbed = _scrub_pii(raw_text[:12000])
 
-    # Scrub PII before sending to external API
-    scrubbed = _scrub_pii(raw_text[:12000])  # 12K chars ~ enough context
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are an expert resume parser. Return ONLY valid JSON, no markdown fences."},
+                    {"role": "user",   "content": f"{_PROMPT}\n\nResume text:\n{scrubbed}"},
+                ],
+                temperature=0.1,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+            )
 
-    try:
-        response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": "You are an expert resume parser. Return ONLY valid JSON, no markdown fences."},
-                {"role": "user",   "content": f"{_PROMPT}\n\nResume text:\n{scrubbed}"},
-            ],
-            temperature=0.1,       # Low temp = deterministic, consistent output
-            max_tokens=2000,
-            response_format={"type": "json_object"},  # Forces valid JSON output
-        )
+            text = response.choices[0].message.content.strip()
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+            text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
+            return json.loads(text)
 
-        text = response.choices[0].message.content.strip()
-        # Strip markdown code fences if present (safety net)
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
-        return json.loads(text)
-
-    except Exception as e:
-        print(f"  [Groq] API error: {e}")
-        return {}
+        except Exception as e:
+            error_str = str(e).lower()
+            is_rate_limit = "429" in error_str or "rate limit" in error_str
+            
+            if is_rate_limit and attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s backoff
+                print(f"  [Groq] Rate limit hit (429). Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                print(f"  [Groq] API error on attempt {attempt+1}: {e}")
+                if attempt == max_retries - 1:
+                    return {}
+    return {}
 
 
 # ── Output normalizer ─────────────────────────────────────────────────────────
@@ -283,6 +303,9 @@ def _normalize_output(llm_dict: dict, raw_text: str) -> dict:
         "skills":     {"flat": flat_skills, "summary": skills_summary},
         "experience": experience,
         "education":  education,
+        "total_experience_years": llm_dict.get("total_experience_years"),
+        "recent_experience_years": llm_dict.get("recent_experience_years"),
+        "normalized_gpa_scaled_to_10": llm_dict.get("normalized_gpa_scaled_to_10")
     }
 
 

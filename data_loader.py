@@ -60,7 +60,7 @@ _CERT_KW = {
     "aws", "azure", "gcp", "google cloud", "kubernetes",
     "terraform", "cisco", "comptia",
 }
-_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 FEATURE_COLS = [
     "total_exp_years", "recent_exp_years", "job_hops",

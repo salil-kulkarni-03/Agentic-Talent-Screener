@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { Sparkles, Upload, TrendingUp, Brain, Zap, Github } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 interface Candidate {
   id: number;
   name: string;
@@ -62,7 +64,7 @@ export default function App() {
   ) => {
     try {
       const query = `?w_sem=${wSemVal}&w_kw=${wKwVal}&w_exp=${wExpVal}&w_match=${wMatchVal}&w_strength=${wStrengthVal}`;
-      const res = await fetch(`http://localhost:8000/api/candidates${query}`);
+      const res = await fetch(`${API_BASE_URL}/api/candidates${query}`);
       if (res.ok) {
         const data = await res.json();
         const mapped = data.candidates.map((c: any) => ({
@@ -98,7 +100,7 @@ export default function App() {
     if (!jobDescription) return;
     setIsUpdatingJD(true);
     try {
-      const res = await fetch('http://localhost:8000/api/jobs', {
+      const res = await fetch(`${API_BASE_URL}/api/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jd: jobDescription }),
@@ -122,7 +124,7 @@ export default function App() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('http://localhost:8000/api/resumes/upload', {
+      const res = await fetch(`${API_BASE_URL}/api/resumes/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -168,7 +170,7 @@ export default function App() {
       try {
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('http://localhost:8000/api/resumes/upload', {
+        const res = await fetch(`${API_BASE_URL}/api/resumes/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -218,7 +220,7 @@ export default function App() {
     setIsSendingChat(true);
     
     try {
-      const res = await fetch('http://localhost:8000/api/chat', {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -307,7 +309,7 @@ export default function App() {
 
     setGithubModalLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/candidates/${candidate.file_hash}/github`);
+      const res = await fetch(`${API_BASE_URL}/api/candidates/${candidate.file_hash}/github`);
       if (res.ok) {
         const data = await res.json();
         setGithubStats(data.stats);
@@ -330,7 +332,7 @@ export default function App() {
 
     setIsLinkingGithub(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/candidates/${activeGithubCandidate.file_hash}/github`, {
+      const res = await fetch(`${API_BASE_URL}/api/candidates/${activeGithubCandidate.file_hash}/github`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ github_username: manualGithubInput }),
@@ -345,7 +347,7 @@ export default function App() {
         
         if (manualGithubInput.trim()) {
           setGithubModalLoading(true);
-          const statsRes = await fetch(`http://localhost:8000/api/candidates/${activeGithubCandidate.file_hash}/github`);
+          const statsRes = await fetch(`${API_BASE_URL}/api/candidates/${activeGithubCandidate.file_hash}/github`);
           if (statsRes.ok) {
             const statsData = await statsRes.json();
             setGithubStats(statsData.stats);
