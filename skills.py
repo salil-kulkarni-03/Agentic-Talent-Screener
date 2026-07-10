@@ -101,6 +101,9 @@ def _l2_normalize(vecs: np.ndarray) -> np.ndarray:
 # SkillsMatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
+_GLOBAL_MODEL_CACHE = {}
+
+
 class SkillsMatcher:
     """
     Parameters
@@ -142,12 +145,24 @@ class SkillsMatcher:
     # ── Private: lazy loaders ────────────────────────────────────────────────
 
     def _load_model(self):
+        global _GLOBAL_MODEL_CACHE
         if self._model is None:
-            SentenceTransformer = _require(
-                "sentence_transformers", "sentence-transformers"
-            ).SentenceTransformer
-            warnings.filterwarnings("ignore", category=FutureWarning)
-            self._model = SentenceTransformer(self.model_name)
+            if self.model_name not in _GLOBAL_MODEL_CACHE:
+                SentenceTransformer = _require(
+                    "sentence_transformers", "sentence-transformers"
+                ).SentenceTransformer
+                warnings.filterwarnings("ignore", category=FutureWarning)
+                
+                # Limit PyTorch CPU threads to 1 to reduce RAM overhead on low-memory servers!
+                try:
+                    import torch
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                except Exception:
+                    pass
+
+                _GLOBAL_MODEL_CACHE[self.model_name] = SentenceTransformer(self.model_name)
+            self._model = _GLOBAL_MODEL_CACHE[self.model_name]
         return self._model
 
     def _load_faiss(self):

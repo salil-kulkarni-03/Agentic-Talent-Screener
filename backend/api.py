@@ -5,6 +5,7 @@ import os
 import hashlib
 from pathlib import Path
 import json
+import gc
 
 # Add the parent directory (project root) to sys.path so we can import our existing modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -228,6 +229,7 @@ def get_ranked_candidates(
                 "audit_status": audit_status,
             })
 
+        gc.collect()
         return {"candidates": report}
     except Exception as e:
         import traceback
