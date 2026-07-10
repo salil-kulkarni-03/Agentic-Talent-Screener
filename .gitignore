@@ -46,6 +46,7 @@ Desktop.ini
 # Temporary outputs, text files and logs
 *.log
 *.txt
+!requirements.txt
 _edu_debug.txt
 _result.txt
 ml_output.txt
