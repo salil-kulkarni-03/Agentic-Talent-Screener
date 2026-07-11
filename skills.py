@@ -193,7 +193,8 @@ class SkillsMatcher:
 
     def _encode(self, texts: list[str]) -> np.ndarray:
         """Return (N, D) float32 normalised embeddings for texts."""
-        model = self._load_model()
+        use_hf_api = os.environ.get("ENV") == "production" or os.environ.get("USE_HF_EMBEDDINGS") == "true"
+        
         results: list[np.ndarray] = []
         to_encode_idx: list[int]  = []
         to_encode_txt: list[str]  = []
@@ -210,15 +211,44 @@ class SkillsMatcher:
 
         # Batch encode cache misses
         if to_encode_txt:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                batch_embs = model.encode(
-                    to_encode_txt,
-                    batch_size=32,
-                    show_progress_bar=False,
-                    convert_to_numpy=True,
-                    normalize_embeddings=False,
-                ).astype(np.float32)
+            batch_embs = None
+
+            # Try Hugging Face Inference API first to save RAM in production
+            if use_hf_api:
+                try:
+                    import requests
+                    url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/{self.model_name}"
+                    headers = {}
+                    hf_token = os.environ.get("HF_TOKEN")
+                    if hf_token:
+                        headers["Authorization"] = f"Bearer {hf_token}"
+                    
+                    res = requests.post(url, json={"inputs": to_encode_txt}, headers=headers, timeout=15)
+                    if res.status_code == 200:
+                        out = res.json()
+                        if isinstance(out, list) and len(out) > 0:
+                            batch_embs = np.array(out, dtype=np.float32)
+                            print(f"  [HF API] Successfully generated {len(to_encode_txt)} embeddings in cloud.")
+                        else:
+                            print(f"  [HF API] Unexpected response format: {type(out)}")
+                    else:
+                        print(f"  [HF API] Server returned status code {res.status_code}: {res.text}")
+                except Exception as e:
+                    print(f"  [HF API] Connection error: {e}")
+
+            # Local fallback (PyTorch implementation)
+            if batch_embs is None:
+                print("  [HF API] Running local SentenceTransformer fallback...")
+                model = self._load_model()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    batch_embs = model.encode(
+                        to_encode_txt,
+                        batch_size=32,
+                        show_progress_bar=False,
+                        convert_to_numpy=True,
+                        normalize_embeddings=False,
+                    ).astype(np.float32)
 
             for local_i, (global_i, text) in enumerate(
                 zip(to_encode_idx, to_encode_txt)
