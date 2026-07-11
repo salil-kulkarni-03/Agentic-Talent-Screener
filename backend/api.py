@@ -21,18 +21,11 @@ from backend.github import extract_github_username, fetch_github_stats
 
 app = FastAPI(title="AI Recruiter API")
 
-# Enable CORS for the frontend
-allowed_origins = ["http://localhost:3000", "http://localhost:5173"]
-frontend_url = os.environ.get("FRONTEND_URL")
-if frontend_url:
-    allowed_origins.append(frontend_url)
-
-allow_all = not frontend_url and os.environ.get("ENV") == "production"
-
+# Enable CORS for the frontend (Permissive for local and cloud deployment)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if allow_all else allowed_origins,
-    allow_credentials=not allow_all,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
