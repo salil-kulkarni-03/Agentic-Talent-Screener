@@ -193,7 +193,11 @@ class SkillsMatcher:
 
     def _encode(self, texts: list[str]) -> np.ndarray:
         """Return (N, D) float32 normalised embeddings for texts."""
-        use_hf_api = os.environ.get("ENV") == "production" or os.environ.get("USE_HF_EMBEDDINGS") == "true"
+        use_hf_api = (
+            os.environ.get("ENV") == "production"
+            or os.environ.get("RENDER") == "true"
+            or os.environ.get("USE_HF_EMBEDDINGS") == "true"
+        )
         
         results: list[np.ndarray] = []
         to_encode_idx: list[int]  = []
@@ -238,7 +242,7 @@ class SkillsMatcher:
 
             # Local fallback (PyTorch implementation)
             if batch_embs is None:
-                if os.environ.get("ENV") == "production":
+                if os.environ.get("ENV") == "production" or os.environ.get("RENDER") == "true":
                     print("  [HF API] WARNING: Cloud API call failed. Local PyTorch fallback is disabled in production to prevent RAM crash!")
                     # Return zero embeddings (dimension 384) to keep the app online without PyTorch RAM pressure
                     batch_embs = np.zeros((len(to_encode_txt), 384), dtype=np.float32)
