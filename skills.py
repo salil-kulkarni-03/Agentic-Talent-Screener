@@ -238,17 +238,22 @@ class SkillsMatcher:
 
             # Local fallback (PyTorch implementation)
             if batch_embs is None:
-                print("  [HF API] Running local SentenceTransformer fallback...")
-                model = self._load_model()
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    batch_embs = model.encode(
-                        to_encode_txt,
-                        batch_size=32,
-                        show_progress_bar=False,
-                        convert_to_numpy=True,
-                        normalize_embeddings=False,
-                    ).astype(np.float32)
+                if os.environ.get("ENV") == "production":
+                    print("  [HF API] WARNING: Cloud API call failed. Local PyTorch fallback is disabled in production to prevent RAM crash!")
+                    # Return zero embeddings (dimension 384) to keep the app online without PyTorch RAM pressure
+                    batch_embs = np.zeros((len(to_encode_txt), 384), dtype=np.float32)
+                else:
+                    print("  [HF API] Running local SentenceTransformer fallback...")
+                    model = self._load_model()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        batch_embs = model.encode(
+                            to_encode_txt,
+                            batch_size=32,
+                            show_progress_bar=False,
+                            convert_to_numpy=True,
+                            normalize_embeddings=False,
+                        ).astype(np.float32)
 
             for local_i, (global_i, text) in enumerate(
                 zip(to_encode_idx, to_encode_txt)
