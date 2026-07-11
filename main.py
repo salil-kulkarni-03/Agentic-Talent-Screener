@@ -73,21 +73,21 @@ def _raw_text_from_file(file_path: str) -> str:
         # Attempt 1: Direct text extraction via PyMuPDF
         try:
             import fitz  # PyMuPDF
-            doc = fitz.open(str(p))
-            text = "\n".join(page.get_text() for page in doc)
-            
-            # Extract structural hyperlinks (e.g. hyperlinked portfolio words like "GitHub")
-            try:
-                links_list = []
-                for page in doc:
-                    for link in page.get_links():
-                        uri = link.get("uri")
-                        if uri:
-                            links_list.append(uri)
-                if links_list:
-                    text += "\n\n[Extracted Hyperlinks]\n" + "\n".join(links_list)
-            except Exception:
-                pass
+            with fitz.open(str(p)) as doc:
+                text = "\n".join(page.get_text() for page in doc)
+                
+                # Extract structural hyperlinks (e.g. hyperlinked portfolio words like "GitHub")
+                try:
+                    links_list = []
+                    for page in doc:
+                        for link in page.get_links():
+                            uri = link.get("uri")
+                            if uri:
+                                links_list.append(uri)
+                    if links_list:
+                        text += "\n\n[Extracted Hyperlinks]\n" + "\n".join(links_list)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -107,13 +107,13 @@ def _raw_text_from_file(file_path: str) -> str:
                 import pytesseract
                 from PIL import Image
                 import io
-                doc = fitz.open(str(p))
-                ocr_pages = []
-                for page in doc:
-                    pix = page.get_pixmap(dpi=300)
-                    img = Image.open(io.BytesIO(pix.tobytes("png")))
-                    ocr_pages.append(pytesseract.image_to_string(img))
-                text = "\n".join(ocr_pages)
+                with fitz.open(str(p)) as doc:
+                    ocr_pages = []
+                    for page in doc:
+                        pix = page.get_pixmap(dpi=300)
+                        img = Image.open(io.BytesIO(pix.tobytes("png")))
+                        ocr_pages.append(pytesseract.image_to_string(img))
+                    text = "\n".join(ocr_pages)
             except Exception:
                 pass
 
