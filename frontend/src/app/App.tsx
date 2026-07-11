@@ -159,53 +159,58 @@ export default function App() {
       description: "Processing sequentially to prevent rate limits.",
     });
 
-    for (let i = 0; i < total; i++) {
-      const file = files[i];
-      // Update loading status
-      toast.loading(`Uploading ${i + 1} of ${total}: ${file.name}...`, { 
-        id: toastId,
-        description: "Processing sequentially to prevent rate limits.",
-      });
-
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch(`${API_BASE_URL}/api/resumes/upload`, {
-          method: 'POST',
-          body: formData,
+    try {
+      for (let i = 0; i < total; i++) {
+        const file = files[i];
+        // Update loading status
+        toast.loading(`Uploading ${i + 1} of ${total}: ${file.name}...`, { 
+          id: toastId,
+          description: "Processing sequentially to prevent rate limits.",
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.message.includes('already uploaded')) {
-            skippedCount++;
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await fetch(`${API_BASE_URL}/api/resumes/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.message.includes('already uploaded')) {
+              skippedCount++;
+            } else {
+              successCount++;
+            }
           } else {
-            successCount++;
+            failedCount++;
           }
-        } else {
+        } catch (err) {
+          console.error(err);
           failedCount++;
         }
-      } catch (err) {
-        console.error(err);
-        failedCount++;
+
+        // Add a small 1-second delay between requests to guarantee rate limits are not triggered
+        if (i < total - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
 
-      // Add a small 1-second delay between requests to guarantee rate limits are not triggered
-      if (i < total - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Refresh candidate leaderboard
+      await fetchCandidates(wSem, wKw, wExp, wMatch, wStrength);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsUploading(false);
+
+      // Show consolidated results
+      const summaryMsg = `Bulk upload finished. ${successCount} added, ${skippedCount} skipped, ${failedCount} failed.`;
+      if (failedCount > 0) {
+        toast.warning(summaryMsg, { id: toastId, duration: 6000 });
+      } else {
+        toast.success(summaryMsg, { id: toastId, duration: 6000 });
       }
-    }
-
-    // Refresh candidate leaderboard
-    await fetchCandidates(wSem, wKw, wExp, wMatch, wStrength);
-    setIsUploading(false);
-
-    // Show consolidated results
-    const summaryMsg = `Bulk upload finished. ${successCount} added, ${skippedCount} skipped, ${failedCount} failed.`;
-    if (failedCount > 0) {
-      toast.warning(summaryMsg, { id: toastId, duration: 6000 });
-    } else {
-      toast.success(summaryMsg, { id: toastId, duration: 6000 });
     }
   };
 
