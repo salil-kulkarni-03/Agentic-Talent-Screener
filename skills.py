@@ -223,7 +223,7 @@ class SkillsMatcher:
                     if hf_token:
                         headers["Authorization"] = f"Bearer {hf_token}"
                     
-                    res = requests.post(url, json={"inputs": to_encode_txt}, headers=headers, timeout=15)
+                    res = requests.post(url, json={"inputs": to_encode_txt}, headers=headers, timeout=3)
                     if res.status_code == 200:
                         out = res.json()
                         if isinstance(out, list) and len(out) > 0:

@@ -79,9 +79,13 @@ export default function App() {
           audit_status: c.audit_status
         }));
         setCandidates(mapped);
+      } else {
+        const errData = await res.json();
+        toast.error(errData.detail || 'Failed to fetch candidates.');
       }
     } catch (err) {
       console.error('Failed to fetch candidates', err);
+      toast.error('Network error. Failed to load leaderboard.');
     }
   }, []);
 
