@@ -216,7 +216,7 @@ class SkillsMatcher:
             if use_hf_api:
                 try:
                     import requests
-                    url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/{self.model_name}"
+                    url = f"https://api-inference.huggingface.co/models/sentence-transformers/{self.model_name}"
                     headers = {}
                     hf_token = os.environ.get("HF_TOKEN")
                     if hf_token:
