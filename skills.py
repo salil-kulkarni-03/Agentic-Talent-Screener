@@ -377,6 +377,40 @@ class SkillsMatcher:
         # Calculate dot products (cosine similarity since both are normalised)
         sims = np.dot(self._embs, jd_emb.T).flatten()  # (n_cands,)
         sem_scores = np.clip(sims, 0.0, 1.0)
+
+        # Self-healing fallback: If Hugging Face DNS resolution failed (embeddings are all zeros)
+        if (self._embs is None) or np.all(self._embs == 0) or np.all(jd_emb == 0):
+            print("  [Semantic Score] Hugging Face DNS/API failed. Falling back to Groq-LLM semantic scoring...")
+            for i, parsed in enumerate(self._candidates):
+                try:
+                    from groq import Groq
+                    api_key = os.environ.get("GROQ_API_KEY")
+                    if api_key:
+                        client = Groq(api_key=api_key)
+                        skills_flat = (parsed.get("skills") or {}).get("flat") or []
+                        cand_summary = f"Candidate Name: {parsed.get('name', 'Unknown')}\nSkills: {', '.join(skills_flat)}"
+                        
+                        prompt = f"""Rate the semantic suitability of the candidate for this Job Description.
+Job Description:
+{jd}
+
+Candidate Profile:
+{cand_summary}
+
+Return ONLY a valid JSON with a single key "score" containing a float between 0.0 and 1.0 (e.g. 0.85). Do not include any explanation or markdown formatting."""
+                        
+                        res_groq = client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0.0,
+                            response_format={"type": "json_object"}
+                        )
+                        score_dict = json.loads(res_groq.choices[0].message.content.strip())
+                        sem_scores[i] = float(score_dict.get("score", 0.0))
+                except Exception as e:
+                    print(f"  [Semantic Score] Groq fallback failed: {e}")
+                    sem_scores[i] = 0.0
+
         # Get top-k indices and scores
         topk_indices = np.argsort(sem_scores)[::-1][:k]
         sem_scores_topk = sem_scores[topk_indices]
