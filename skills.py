@@ -132,8 +132,6 @@ class SkillsMatcher:
 
         # Lazy-loaded heavy objects
         self._model      = None   # SentenceTransformer
-        self._faiss      = None   # faiss module
-        self._index      = None   # faiss.IndexFlatIP
         self._tfidf      = None   # fitted TfidfVectorizer
 
         # Candidate store
@@ -165,10 +163,7 @@ class SkillsMatcher:
             self._model = _GLOBAL_MODEL_CACHE[self.model_name]
         return self._model
 
-    def _load_faiss(self):
-        if self._faiss is None:
-            self._faiss = _require("faiss", "faiss-cpu")
-        return self._faiss
+
 
     # ── Private: embedding cache ─────────────────────────────────────────────
 
@@ -272,14 +267,7 @@ class SkillsMatcher:
         matrix = np.stack([r[1] for r in results], axis=0)
         return _l2_normalize(matrix)
 
-    # ── Private: build/rebuild FAISS index ──────────────────────────────────
 
-    def _build_index(self, embs: np.ndarray):
-        faiss = self._load_faiss()
-        dim   = embs.shape[1]
-        index = faiss.IndexFlatIP(dim)  # inner product == cosine after L2-norm
-        index.add(embs)
-        self._index = index
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -338,9 +326,6 @@ class SkillsMatcher:
         else:
             self._embs = np.vstack([self._embs, new_embs])
 
-        # Rebuild FAISS index (cheap — IndexFlatIP just wraps the matrix)
-        self._build_index(self._embs)
-
         # Invalidate TF-IDF (will be refit on next rank() call)
         self._tfidf = None
 
@@ -387,13 +372,14 @@ class SkillsMatcher:
         n_cands = len(self._candidates)
         k = min(top_k, n_cands)
 
-        # ── 1. Semantic score (FAISS) ─────────────────────────────────────────
+        # ── 1. Semantic score (NumPy Dot Product) ──────────────────────────────
         jd_emb = self._encode([jd])                  # (1, D) normalised
-        faiss  = self._load_faiss()
-        # Search all candidates (top-k from FAISS)
-        sims, indices = self._index.search(jd_emb, k)  # (1, k)
-        sem_scores_topk = np.clip(sims[0], 0.0, 1.0)   # inner product ≡ cosine
-        topk_indices    = indices[0]
+        # Calculate dot products (cosine similarity since both are normalised)
+        sims = np.dot(self._embs, jd_emb.T).flatten()  # (n_cands,)
+        sem_scores = np.clip(sims, 0.0, 1.0)
+        # Get top-k indices and scores
+        topk_indices = np.argsort(sem_scores)[::-1][:k]
+        sem_scores_topk = sem_scores[topk_indices]
 
         # ── 2. Keyword Jaccard score ──────────────────────────────────────────
         jd_tokens = _tokenize(jd)
@@ -459,14 +445,12 @@ class SkillsMatcher:
 
     def save_index(self, path: str | Path) -> None:
         """
-        Serialize the FAISS index + candidate metadata to a single .npz file.
+        Serialize the candidate embeddings + candidate metadata to a single .npz file.
         Useful for instant startup without re-encoding.
         """
-        if self._index is None or self._embs is None:
+        if self._embs is None:
             raise RuntimeError("Nothing to save — add candidates first.")
-        faiss = self._load_faiss()
         path  = Path(path)
-        index_bytes = faiss.serialize_index(self._index)
         meta = [
             {
                 "name":       c.get("name", ""),
@@ -480,20 +464,16 @@ class SkillsMatcher:
         np.savez_compressed(
             path,
             embs        = self._embs.astype(np.float16),
-            index_bytes = np.frombuffer(index_bytes, dtype=np.uint8),
             meta_json   = np.array([json.dumps(meta, default=str)]),
         )
 
     def load_index(self, path: str | Path) -> None:
         """Load a previously saved index. Replaces current state."""
-        faiss = self._load_faiss()
         path  = Path(path)
         data  = np.load(path, allow_pickle=False)
         meta  = json.loads(str(data["meta_json"][0]))
-        index_bytes = data["index_bytes"].tobytes()
 
         self._embs      = data["embs"].astype(np.float32)
-        self._index     = faiss.deserialize_index(index_bytes)
         self._candidates= [m["parsed"] for m in meta]
         self._docs      = [m["doc"]    for m in meta]
         self._exp_texts = [m["exp"]    for m in meta]
