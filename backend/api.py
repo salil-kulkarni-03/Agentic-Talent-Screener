@@ -234,6 +234,21 @@ def get_ranked_candidates(
                 "audit_status": audit_status,
             })
 
+        # Update db_candidates in-memory database with the latest calculated metrics
+        for rep in report:
+            for cand in db_candidates:
+                if cand.get("file_hash") == rep["file_hash"]:
+                    cand["rank"] = rep["rank"]
+                    cand["hire_probability"] = rep["hire_probability"]
+                    cand["decision"] = rep["decision"]
+                    cand["composite_score"] = rep["composite_score"]
+                    cand["semantic_score"] = rep["semantic_score"]
+                    cand["keyword_score"] = rep["keyword_score"]
+                    cand["experience_score"] = rep["experience_score"]
+                    cand["candidate_strength"] = rep["candidate_strength"]
+                    cand["skills_matched"] = rep["skills_matched"]
+                    cand["skills_missing"] = rep["skills_missing"]
+
         gc.collect()
         return {"candidates": report}
     except Exception as e:
