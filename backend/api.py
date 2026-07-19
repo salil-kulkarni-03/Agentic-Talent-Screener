@@ -45,6 +45,12 @@ db_jd = ""
 try:
     model_dict = joblib.load(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hiring_model.joblib"))
     stage2_model = model_dict.get("pipeline")
+    # Dynamic compatibility patch for scikit-learn SimpleImputer version mismatches
+    if stage2_model and hasattr(stage2_model, "named_steps"):
+        if "imputer" in stage2_model.named_steps:
+            imputer = stage2_model.named_steps["imputer"]
+            if not hasattr(imputer, "_fill_dtype") and hasattr(imputer, "_fit_dtype"):
+                imputer._fill_dtype = imputer._fit_dtype
 except Exception as e:
     print(f"Warning: Could not load hiring_model.joblib: {e}")
     stage2_model = None
